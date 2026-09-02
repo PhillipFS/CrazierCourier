@@ -1,0 +1,8 @@
+{
+	"SourceFiles": [
+		"D:\\ProjectCrazierCourier\\CrazierCourier\\CrazierCourier\\Source\\CrazierCourier\\CrazierCourier.Build.cs",
+		"D:\\ProjectCrazierCourier\\CrazierCourier\\CrazierCourier\\Source\\CrazierCourier.Target.cs",
+		"D:\\ProjectCrazierCourier\\CrazierCourier\\CrazierCourier\\Source\\CrazierCourierEditor.Target.cs"
+	],
+	"EngineVersion": "5.6.1"
+}

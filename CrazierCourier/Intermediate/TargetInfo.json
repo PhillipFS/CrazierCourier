@@ -1,0 +1,14 @@
+{
+	"Targets": [
+		{
+			"Name": "CrazierCourier",
+			"Path": "..\\Source\\CrazierCourier.Target.cs",
+			"Type": "Game"
+		},
+		{
+			"Name": "CrazierCourierEditor",
+			"Path": "..\\Source\\CrazierCourierEditor.Target.cs",
+			"Type": "Editor"
+		}
+	]
+}

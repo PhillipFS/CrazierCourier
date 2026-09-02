@@ -1,0 +1,13 @@
+/NOLOGO
+/errorReport:prompt
+/MACHINE:x64
+/SUBSYSTEM:WINDOWS
+/DEF
+/NAME:"UnrealEditor-CrazierCourier.dll"
+/IGNORE:4221
+/NODEFAULTLIB
+"D:/ProjectCrazierCourier/CrazierCourier/CrazierCourier/Intermediate/Build/Win64/x64/CrazierCourierEditor/Development/UnrealEd/SharedPCH.UnrealEd.Project.ValApi.ValExpApi.Cpp20.h.obj"
+"D:/ProjectCrazierCourier/CrazierCourier/CrazierCourier/Intermediate/Build/Win64/x64/UnrealEditor/Development/CrazierCourier/CrazierCourier.cpp.obj"
+"D:/ProjectCrazierCourier/CrazierCourier/CrazierCourier/Intermediate/Build/Win64/x64/UnrealEditor/Development/CrazierCourier/PerModuleInline.gen.cpp.obj"
+"D:/ProjectCrazierCourier/CrazierCourier/CrazierCourier/Intermediate/Build/Win64/x64/UnrealEditor/Development/CrazierCourier/Default.rc2.res"
+/OUT:"D:/ProjectCrazierCourier/CrazierCourier/CrazierCourier/Intermediate/Build/Win64/x64/UnrealEditor/Development/CrazierCourier/UnrealEditor-CrazierCourier.lib"
