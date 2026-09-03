@@ -72,3 +72,7 @@ Plugins/**/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
+CrazierCourier/Intermediate/CachedAssetRegistry_0.bin
+CrazierCourier/Intermediate/CachedAssetRegistryDiscovery.bin
+CrazierCourier/Saved/Config/WindowsEditor/EditorPerProjectUserSettings.ini
+CrazierCourier/Saved/Logs/CrazierCourier.log
