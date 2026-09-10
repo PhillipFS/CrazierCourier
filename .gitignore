@@ -52,6 +52,26 @@ Plugins/**/Binaries/*
 # Builds
 Build/*
 
+# Build artifacts
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+.vs/
+
+# Per-user project files
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.ipch
+
+# Mac/Linux
+.DS_Store
+*.xcodeproj
+*.xcworkspace
+
 # Whitelist PakBlacklist-<BuildConfiguration>.txt files
 !Build/*/
 Build/*/**
