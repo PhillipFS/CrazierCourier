@@ -27,6 +27,8 @@ public:
 	void SetCheckpointIndex(int32 NewIndex) { CheckpointIndex = NewIndex; }
 	int32 GetCheckpointIndex() const { return CheckpointIndex; }
 
+	void SetVisualMeshVisible(bool bVisible);
+
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "Checkpoint")
 	TObjectPtr<USceneComponent> Root;

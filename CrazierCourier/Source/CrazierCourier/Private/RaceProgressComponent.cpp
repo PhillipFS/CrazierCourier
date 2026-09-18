@@ -247,6 +247,7 @@ void URaceProgressComponent::AssignRandomPickupDelivery()
 		return;
 	}
 
+	ACheckpoint* PreviousPickup = PickupCheckpoint;
 	ACheckpoint* PreviousDelivery = DeliveryCheckpoint;
 
 	ACheckpoint* NewPickup = nullptr;
@@ -284,6 +285,20 @@ void URaceProgressComponent::AssignRandomPickupDelivery()
 
 	DeliveryCheckpoint = NewDelivery;
 	bHasPickedUp = false;
+
+	// Hide whichever checkpoints made up the outgoing pair, then show the new
+	// pair - so at any given moment, only the two checkpoints actually
+	// relevant to this racer's current task are visible.
+	if (PreviousPickup)
+	{
+		PreviousPickup->SetVisualMeshVisible(false);
+	}
+	if (PreviousDelivery)
+	{
+		PreviousDelivery->SetVisualMeshVisible(false);
+	}
+	PickupCheckpoint->SetVisualMeshVisible(true);
+	DeliveryCheckpoint->SetVisualMeshVisible(true);
 
 	if (GEngine && GetOwner())
 	{

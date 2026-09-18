@@ -29,6 +29,14 @@ ACheckpoint::ACheckpoint()
 	VisualMesh->SetGenerateOverlapEvents(false);
 }
 
+void ACheckpoint::SetVisualMeshVisible(bool bVisible)
+{
+	if (VisualMesh)
+	{
+		VisualMesh->SetVisibility(bVisible);
+	}
+}
+
 void ACheckpoint::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
