@@ -23,7 +23,11 @@ public:
 	// through them. This way, players or AI can't skip a checkpoint.
 	UPROPERTY(EditAnywhere, Category = "Race")
 	TArray<ACheckpoint*> Checkpoints;
+	UPROPERTY(EditAnywhere, Category = "Delivery")
+	TArray<ACheckpoint*> PickupCheckpoints;
+	UPROPERTY(EditAnywhere, Category = "Delivery")
 
+	TArray<ACheckpoint*> DeliveryCheckpoints;
 	// Editable per-race lap count. Also determines the size of each racer's LapTimes array.
 	UPROPERTY(EditAnywhere, Category = "Race")
 	int32 NumberOfLaps = 3;
@@ -43,6 +47,8 @@ public:
 	int32 GetNumberOfLaps() const { return NumberOfLaps; }
 
 	const TArray<ACheckpoint*>& GetCheckpoints() const { return Checkpoints; }
+	const TArray<ACheckpoint*>& GetPickupCheckpoints() const { return PickupCheckpoints; }
+	const TArray<ACheckpoint*>& GetDeliveryCheckpoints() const { return DeliveryCheckpoints; }
 
 protected:
 	virtual void BeginPlay() override;

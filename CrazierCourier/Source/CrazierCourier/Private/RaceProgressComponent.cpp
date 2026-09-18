@@ -2,10 +2,50 @@
 #include "Checkpoint.h"
 #include "RaceManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetMathLibrary.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "GameFramework/Actor.h"
+
+namespace
+{
+	// Picks a random entry from Pool, skipping any unassigned (None/nullptr)
+	// slots - protects against empty array elements in the editor causing a
+	// crash later when the picked "checkpoint" turns out to be null.
+	ACheckpoint* PickRandomValidCheckpoint(const TArray<ACheckpoint*>& Pool)
+	{
+		TArray<ACheckpoint*> ValidEntries;
+		ValidEntries.Reserve(Pool.Num());
+		for (ACheckpoint* Entry : Pool)
+		{
+			if (Entry)
+			{
+				ValidEntries.Add(Entry);
+			}
+		}
+
+		if (ValidEntries.Num() == 0)
+		{
+			return nullptr;
+		}
+
+		return ValidEntries[FMath::RandRange(0, ValidEntries.Num() - 1)];
+	}
+}
 
 URaceProgressComponent::URaceProgressComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	// Ticking is needed now so the indicator mesh can continuously 
+	// rotate to face the current pickup/delivery target.
+	PrimaryComponentTick.bCanEverTick = true;
+
+	IndicatorMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("IndicatorMesh"));
+	IndicatorMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	IndicatorMesh->SetGenerateOverlapEvents(false);
+
+	// Must be Movable - it needs to follow the vehicle around and rotate every
+	// frame in TickComponent.
+	IndicatorMesh->SetMobility(EComponentMobility::Movable);
 }
 
 void URaceProgressComponent::BeginPlay()
@@ -29,11 +69,40 @@ void URaceProgressComponent::BeginPlay()
 
 	// Lap times array size matches the editable lap count, per lap slot.
 	LapTimes.SetNumZeroed(RaceManagerRef->GetNumberOfLaps());
+
+	// For indicator:
+	if (AActor* Owner = GetOwner())
+	{
+		if (USceneComponent* OwnerRoot = Owner->GetRootComponent())
+		{
+			IndicatorMesh->RegisterComponent();
+			IndicatorMesh->AttachToComponent(OwnerRoot, FAttachmentTransformRules::KeepRelativeTransform);
+			IndicatorMesh->SetRelativeLocation(FVector(0.f, 0.f, IndicatorHeightAboveVehicle));
+
+			// Apply whatever mesh was picked in the Details panel:
+			if (IndicatorMeshAsset)
+			{
+				IndicatorMesh->SetStaticMesh(IndicatorMeshAsset);
+			}
+		}
+	}
+
+	// Issue first random pickup/delivery pair:
+	AssignRandomPickupDelivery();
 }
 
 void URaceProgressComponent::NotifyCheckpointPassed(ACheckpoint* Checkpoint)
 {
-	if (!Checkpoint || !RaceManagerRef || bRaceFinished)
+	// Pickup/delivery is a separate task from the race lap sequence - it
+	// runs regardless of whether this checkpoint happens to be the next one
+	// expected in the lap order.
+	HandlePickupDeliveryCheckpoint(Checkpoint);
+
+	const int32 PassedIndex = Checkpoint->GetCheckpointIndex();
+
+	// RACING:
+	/*
+	// 	if (!Checkpoint || !RaceManagerRef || bRaceFinished)
 	{
 		return;
 	}
@@ -44,8 +113,6 @@ void URaceProgressComponent::NotifyCheckpointPassed(ACheckpoint* Checkpoint)
 		// during free-roam, pre-race positioning, etc.
 		return;
 	}
-
-	const int32 PassedIndex = Checkpoint->GetCheckpointIndex();
 
 	// "no skipping" rule: the checkpoint that was touched must
 	// be exactly the next one this racer is expecting. Touching checkpoint 3
@@ -96,6 +163,179 @@ void URaceProgressComponent::NotifyCheckpointPassed(ACheckpoint* Checkpoint)
 		{
 			bRaceFinished = true;
 			OnRaceFinished.Broadcast();
+		}
+	}
+	*/
+}
+
+void URaceProgressComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (!IndicatorMesh)
+	{
+		return;
+	}
+
+	ACheckpoint* Target = GetCurrentTargetCheckpoint();
+
+	// TEMP DEBUG: if no real pickup/delivery target is assigned yet, fall back
+	// to whatever checkpoint happens to be first in RaceManager's list, just to
+	// test the indicator's rotation logic on its own. Remove this block once
+	// AssignRandomPickupDelivery is confirmed working correctly.
+	if (!Target && RaceManagerRef)
+	{
+		const TArray<ACheckpoint*>& AllCheckpoints = RaceManagerRef->GetCheckpoints();
+		if (AllCheckpoints.Num() > 0)
+		{
+			Target = AllCheckpoints[0];
+		}
+	}
+
+	if (!Target)
+	{
+		// No pickup/delivery pair assigned yet, hide the indicator rather than point at nothing.
+		IndicatorMesh->SetVisibility(false);
+		return;
+	}
+
+	IndicatorMesh->SetVisibility(true);
+
+	// DEBUG: print once, only when the target actually changes (not every frame).
+	if (Target != LastIndicatorTarget)
+	{
+		LastIndicatorTarget = Target;
+
+		if (GEngine && GetOwner())
+		{
+			const FString Msg = FString::Printf(TEXT("%s: Indicator target updated -> %s"),
+				*GetOwner()->GetName(), *Target->GetName());
+			GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, Msg);
+		}
+	}
+
+	// DEBUG: persistent readout of what the indicator is currently pointing at,
+	// refreshed every frame on the same line (Key = this component's unique ID,
+	// so multiple racers each get their own line instead of overwriting each other).
+	if (GEngine && GetOwner())
+	{
+		const int32 DebugKey = static_cast<int32>(GetUniqueID());
+		const FString Msg = FString::Printf(TEXT("%s: Indicator -> %s"),
+			*GetOwner()->GetName(), *Target->GetName());
+		GEngine->AddOnScreenDebugMessage(DebugKey, 0.f, FColor::White, Msg);
+	}
+
+	const FVector MeshLocation = IndicatorMesh->GetComponentLocation();
+	const FVector TargetLocation = Target->GetActorLocation();
+	const FRotator LookAtRotation = UKismetMathLibrary::FindLookAtRotation(MeshLocation, TargetLocation);
+	IndicatorMesh->SetWorldRotation(LookAtRotation);
+}
+
+void URaceProgressComponent::AssignRandomPickupDelivery()
+{
+	if (!RaceManagerRef)
+	{
+		return;
+	}
+
+	const TArray<ACheckpoint*>& PickupPool = RaceManagerRef->GetPickupCheckpoints();
+	const TArray<ACheckpoint*>& DeliveryPool = RaceManagerRef->GetDeliveryCheckpoints();
+
+	if (PickupPool.Num() == 0 || DeliveryPool.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("URaceProgressComponent: RaceManager needs at least 1 entry in both PickupCheckpoints and DeliveryCheckpoints."));
+		return;
+	}
+
+	ACheckpoint* PreviousDelivery = DeliveryCheckpoint;
+
+	ACheckpoint* NewPickup = nullptr;
+	int32 PickupSafetyCounter = 0;
+	do
+	{
+		NewPickup = PickRandomValidCheckpoint(PickupPool);
+		PickupSafetyCounter++;
+	} while (NewPickup == PreviousDelivery && PickupPool.Num() > 1 && PickupSafetyCounter < 20);
+
+	PickupCheckpoint = NewPickup;
+	if (!PickupCheckpoint)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("URaceProgressComponent: PickupCheckpoints has no valid (non-null) entries - check for empty slots in RaceManager's array."));
+		return;
+	}
+
+	// Guard against picking the exact same checkpoint actor for both, in case
+	// the same one was accidentally added to both pools. If DeliveryPool only
+	// has one valid entry and it happens to be that same actor, this just
+	// accepts it rather than looping forever.
+	ACheckpoint* NewDelivery = nullptr;
+	int32 SafetyCounter = 0;
+	do
+	{
+		NewDelivery = PickRandomValidCheckpoint(DeliveryPool);
+		SafetyCounter++;
+	} while (NewDelivery == PickupCheckpoint && DeliveryPool.Num() > 1 && SafetyCounter < 20);
+
+	if (!NewDelivery)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("URaceProgressComponent: DeliveryCheckpoints has no valid (non-null) entries - check for empty slots in RaceManager's array."));
+		return;
+	}
+
+	DeliveryCheckpoint = NewDelivery;
+	bHasPickedUp = false;
+
+	if (GEngine && GetOwner())
+	{
+		const FString Msg = FString::Printf(TEXT("%s: New task - Pickup %s, Deliver %s"),
+			*GetOwner()->GetName(), *PickupCheckpoint->GetName(), *DeliveryCheckpoint->GetName());
+		GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan, Msg);
+	}
+}
+
+ACheckpoint* URaceProgressComponent::GetCurrentTargetCheckpoint() const
+{
+	return bHasPickedUp ? DeliveryCheckpoint : PickupCheckpoint;
+}
+
+void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpoint)
+{
+	if (!Checkpoint)
+	{
+		return;
+	}
+
+	if (Checkpoint == PickupCheckpoint && !bHasPickedUp)
+	{
+		bHasPickedUp = true;
+		OnPickupCollected.Broadcast();
+
+		if (GEngine && GetOwner())
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan, FString::Printf(TEXT("%s: Pickup collected"), *GetOwner()->GetName()));
+		}
+	}
+	else if (Checkpoint == DeliveryCheckpoint)
+	{
+		if (bHasPickedUp)
+		{
+			bHasPickedUp = false;
+			OnDeliveryCompleted.Broadcast();
+
+			if (GEngine && GetOwner())
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, FString::Printf(TEXT("%s: Delivery complete!"), *GetOwner()->GetName()));
+			}
+			// Hand out a fresh random pair for the next delivery cycle.
+			AssignRandomPickupDelivery();
+		}
+		else
+		{
+			// Delivery touched without Pickup first - per spec, nothing happens.
+			if (GEngine && GetOwner())
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, FString::Printf(TEXT("%s: Delivery ignored - no pickup yet"), *GetOwner()->GetName()));
+			}
 		}
 	}
 }
