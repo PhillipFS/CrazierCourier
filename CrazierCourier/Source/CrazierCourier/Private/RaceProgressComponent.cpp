@@ -177,6 +177,27 @@ void URaceProgressComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		return;
 	}
 
+	// --- Delivery timer countdown ---
+	if (PickupCheckpoint && DeliveryCheckpoint && !bTimeoutAlreadyHandled)
+	{
+		DeliveryTimeRemaining = FMath::Max(0.0f, DeliveryTimeRemaining - DeltaTime);
+
+		if (GEngine && GetOwner())
+		{
+			const int32 TimerDebugKey = static_cast<int32>(GetUniqueID()) + 1;
+			const FString Msg = FString::Printf(TEXT("%s: Time to deliver -> %.1fs"),
+				*GetOwner()->GetName(), DeliveryTimeRemaining);
+			GEngine->AddOnScreenDebugMessage(TimerDebugKey, 0.0f, FColor::Turquoise, Msg);
+		}
+
+		if (DeliveryTimeRemaining <= 0.0f)
+		{
+			bTimeoutAlreadyHandled = true;
+			AwardPoints(1.0f);
+			AssignRandomPickupDelivery();
+		}
+	}
+
 	ACheckpoint* Target = GetCurrentTargetCheckpoint();
 
 	// TEMP DEBUG: if no real pickup/delivery target is assigned yet, fall back
@@ -286,6 +307,10 @@ void URaceProgressComponent::AssignRandomPickupDelivery()
 	DeliveryCheckpoint = NewDelivery;
 	bHasPickedUp = false;
 
+	// Start the delivery timer fresh for this new pair.
+	DeliveryTimeRemaining = TimeToReachCheckpoint;
+	bTimeoutAlreadyHandled = false;
+
 	// Hide whichever checkpoints made up the outgoing pair, then show the new
 	// pair - so at any given moment, only the two checkpoints actually
 	// relevant to this racer's current task are visible.
@@ -339,18 +364,61 @@ void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpo
 
 			if (GEngine && GetOwner())
 			{
-				GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, FString::Printf(TEXT("%s: Delivery complete!"), *GetOwner()->GetName()));
+				// DEBUG:
+				GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, FString::Printf(TEXT("%s: Delivery complete!"), *GetOwner()->GetName()));
 			}
-			// Hand out a fresh random pair for the next delivery cycle.
+
+			// get used time percentage and award points based on that using the AwardPoints function:
+			const float TimePercentUsed = (TimeToReachCheckpoint > 0.0f)
+				? FMath::Clamp((TimeToReachCheckpoint - DeliveryTimeRemaining) / TimeToReachCheckpoint, 0.0f, 1.0f)
+				: 1.0f;
+			AwardPoints(TimePercentUsed);
+
+			// Hand out a new random pair of checkpoints for the next delivery cycle.
 			AssignRandomPickupDelivery();
 		}
 		else
 		{
-			// Delivery touched without Pickup first - per spec, nothing happens.
+			// Delivery touched without Pickup first:
 			if (GEngine && GetOwner())
 			{
+				// DEBUG:
 				GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, FString::Printf(TEXT("%s: Delivery ignored - no pickup yet"), *GetOwner()->GetName()));
 			}
 		}
+	}
+}
+
+void URaceProgressComponent::AwardPoints(float TimePercentUsed)
+{
+	float PointsToAward = 0.f;
+
+	if (TimePercentUsed >= 1.f)
+	{
+		// Ran out of time entirely - guaranteed minimum only.
+		PointsToAward = MinimumPoints;
+	}
+	else if (TimePercentUsed <= 0.25f)
+	{
+		// Delivered within the first 25% of the allotted time - full reward.
+		PointsToAward = MaximumPoints;
+	}
+	else
+	{
+		// Deduct that percentage of time used from the maximum - e.g. 33% of
+		// the time used deducts 33% of MaximumPoints, awarding the remaining
+		// 67%. Never drops below MinimumPoints for an on-time delivery.
+		PointsToAward = FMath::Max(MinimumPoints, MaximumPoints * (1.f - TimePercentUsed));
+	}
+
+	TotalPoints += PointsToAward;
+	OnPointsAwarded.Broadcast(PointsToAward, TotalPoints);
+
+	if (GEngine && GetOwner())
+	{
+		// DEBUG: print the awarded points and total so far, along with the percentage of time used to earn it.
+		const FString Msg = FString::Printf(TEXT("%s: Awarded %.1f points (%.0f%% of time used) - Total: %.1f"),
+			*GetOwner()->GetName(), PointsToAward, TimePercentUsed * 100.f, TotalPoints);
+		GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Emerald, Msg);
 	}
 }
