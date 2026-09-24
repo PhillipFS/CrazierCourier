@@ -52,13 +52,19 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Delivery")
 	FOnDeliveryCompleted OnDeliveryCompleted;
 
-	UPROPERTY(BlueprintAssignable, Category = "Delivery Task")
+	UPROPERTY(BlueprintAssignable, Category = "Delivery")
 	FOnPointsAwarded OnPointsAwarded;
 
-	UFUNCTION(BlueprintPure, Category = "Delivery Task")
+	UFUNCTION(BlueprintPure, Category = "Pickup Item")
+	float GetPickupItemHealth() const { return PickupItemHealth; }
+
+	UFUNCTION(BlueprintPure, Category = "Pickup Item")
+	float GetPickupItemWeight() const { return PickupItemWeight; }
+
+	UFUNCTION(BlueprintPure, Category = "Delivery")
 	float GetTotalPoints() const { return TotalPoints; }
 
-	UFUNCTION(BlueprintPure, Category = "Delivery Task")
+	UFUNCTION(BlueprintPure, Category = "Delivery")
 	float GetDeliveryTimeRemaining() const { return DeliveryTimeRemaining; }
 
 	UFUNCTION(BlueprintCallable, Category = "Delivery")
@@ -106,6 +112,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Delivery")
 	bool bHasPickedUp = false;
 
+	// --- Currently carried pickup item ---
+	// Copied over from whichever Checkpoint was just collected.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pickup Item")
+	float PickupItemHealth = 0.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pickup Item")
+	float PickupItemWeight = 0.f;
+
 	// --- Delivery reward system ---
 	// A countdown starts the moment a pair is assigned. Reaching the delivery
 	// checkpoint before it runs out awards points based on how much of the
@@ -140,19 +154,25 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Delivery")
 	TObjectPtr<UStaticMesh> IndicatorMeshAsset;
 private:
+	// Handle checkpoint rules:
 	void HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpoint);
-
-	// DEBUG: tracks the last checkpoint the indicator pointed at, so TickComponent
-	// can print a one-time message only when the target actually changes,
-	// rather than spamming every frame.
-	ACheckpoint* LastIndicatorTarget = nullptr;
 
 	// Awards points based on TimePercentUsed (0.0 = delivered instantly, 1.0 =
 	// ran out of time entirely). Called both on a successful delivery and on
 	// timeout - see the .cpp for the exact reward curve.
 	void AwardPoints(float TimePercentUsed);
 
+	// Copies the given checkpoint's ItemHealth/ItemWeight into
+	// PickupItemHealth/PickupItemWeight - called the moment a pickup checkpoint
+	// is actually collected.
+	void AssignPickupItemValues(ACheckpoint* Checkpoint);
+
 	// Prevents the timeout case in TickComponent from firing more than once
 	// per pair - reset back to false every time a new pair is assigned.
 	bool bTimeoutAlreadyHandled = false;
+
+	// DEBUG: tracks the last checkpoint the indicator pointed at, so TickComponent
+	// can print a one-time message only when the target actually changes,
+	// rather than spamming every frame.
+	ACheckpoint* LastIndicatorTarget = nullptr;
 };

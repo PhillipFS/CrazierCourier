@@ -27,6 +27,19 @@ public:
 	void SetCheckpointIndex(int32 NewIndex) { CheckpointIndex = NewIndex; }
 	int32 GetCheckpointIndex() const { return CheckpointIndex; }
 
+	// Values for whatever item this checkpoint hands out when it's used as a
+	// pickup point. - SET IN THE EDITOR FOR SIMPLICITY, INDIVIDUALLY FOR EACH PICKUP
+	UPROPERTY(EditAnywhere, Category = "Pickup Item")
+	float ItemHealth = 0.f;
+
+	UPROPERTY(EditAnywhere, Category = "Pickup Item")
+	float ItemWeight = 0.f;
+
+	float GetItemHealth() const { return ItemHealth; }
+	float GetItemWeight() const { return ItemWeight; }
+
+	// used by the pickup/delivery system to only show whichever checkpoints are 
+	// part of the currently assigned pair.
 	void SetVisualMeshVisible(bool bVisible);
 
 protected:

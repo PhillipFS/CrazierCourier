@@ -77,7 +77,7 @@ void URaceProgressComponent::BeginPlay()
 		{
 			IndicatorMesh->RegisterComponent();
 			IndicatorMesh->AttachToComponent(OwnerRoot, FAttachmentTransformRules::KeepRelativeTransform);
-			IndicatorMesh->SetRelativeLocation(FVector(0.f, 0.f, IndicatorHeightAboveVehicle));
+			IndicatorMesh->SetRelativeLocation(FVector(0.0f, 0.0f, IndicatorHeightAboveVehicle));
 
 			// Apply whatever mesh was picked in the Details panel:
 			if (IndicatorMeshAsset)
@@ -100,7 +100,7 @@ void URaceProgressComponent::NotifyCheckpointPassed(ACheckpoint* Checkpoint)
 
 	const int32 PassedIndex = Checkpoint->GetCheckpointIndex();
 
-	// RACING:
+	// (UNUSED) RACING:
 	/*
 	// 	if (!Checkpoint || !RaceManagerRef || bRaceFinished)
 	{
@@ -193,7 +193,7 @@ void URaceProgressComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		if (DeliveryTimeRemaining <= 0.0f)
 		{
 			bTimeoutAlreadyHandled = true;
-			AwardPoints(1.0f);
+			AwardPoints(1.0f); // 1.0f is 100% of the time used.
 			AssignRandomPickupDelivery();
 		}
 	}
@@ -231,7 +231,7 @@ void URaceProgressComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		{
 			const FString Msg = FString::Printf(TEXT("%s: Indicator target updated -> %s"),
 				*GetOwner()->GetName(), *Target->GetName());
-			GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, Msg);
+			GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, Msg);
 		}
 	}
 
@@ -243,7 +243,7 @@ void URaceProgressComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		const int32 DebugKey = static_cast<int32>(GetUniqueID());
 		const FString Msg = FString::Printf(TEXT("%s: Indicator -> %s"),
 			*GetOwner()->GetName(), *Target->GetName());
-		GEngine->AddOnScreenDebugMessage(DebugKey, 0.f, FColor::White, Msg);
+		GEngine->AddOnScreenDebugMessage(DebugKey, 0.0f, FColor::White, Msg);
 	}
 
 	const FVector MeshLocation = IndicatorMesh->GetComponentLocation();
@@ -329,7 +329,7 @@ void URaceProgressComponent::AssignRandomPickupDelivery()
 	{
 		const FString Msg = FString::Printf(TEXT("%s: New task - Pickup %s, Deliver %s"),
 			*GetOwner()->GetName(), *PickupCheckpoint->GetName(), *DeliveryCheckpoint->GetName());
-		GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Cyan, Msg);
+		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Cyan, Msg);
 	}
 }
 
@@ -349,10 +349,12 @@ void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpo
 	{
 		bHasPickedUp = true;
 		OnPickupCollected.Broadcast();
+		// assign item values to player raceprogresscomponent:
+		AssignPickupItemValues(Checkpoint);
 
 		if (GEngine && GetOwner())
 		{
-			GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan, FString::Printf(TEXT("%s: Pickup collected"), *GetOwner()->GetName()));
+			GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, FString::Printf(TEXT("%s: Pickup collected"), *GetOwner()->GetName()));
 		}
 	}
 	else if (Checkpoint == DeliveryCheckpoint)
@@ -362,10 +364,15 @@ void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpo
 			bHasPickedUp = false;
 			OnDeliveryCompleted.Broadcast();
 
+			// Assign delivery checkpoint values to the player when
+			// reached. (Used by default to reset item health and weight
+			// variables to 0, but can be used to set different values.)
+			AssignPickupItemValues(Checkpoint);
+
 			if (GEngine && GetOwner())
 			{
 				// DEBUG:
-				GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, FString::Printf(TEXT("%s: Delivery complete!"), *GetOwner()->GetName()));
+				GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("%s: Delivery complete!"), *GetOwner()->GetName()));
 			}
 
 			// get used time percentage and award points based on that using the AwardPoints function:
@@ -383,7 +390,7 @@ void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpo
 			if (GEngine && GetOwner())
 			{
 				// DEBUG:
-				GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, FString::Printf(TEXT("%s: Delivery ignored - no pickup yet"), *GetOwner()->GetName()));
+				GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("%s: Delivery ignored - no pickup yet"), *GetOwner()->GetName()));
 			}
 		}
 	}
@@ -391,12 +398,12 @@ void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpo
 
 void URaceProgressComponent::AwardPoints(float TimePercentUsed)
 {
-	float PointsToAward = 0.f;
+	float PointsToAward = 0.0f;
 
-	if (TimePercentUsed >= 1.f)
+	if (TimePercentUsed >= 1.0f)
 	{
-		// Ran out of time entirely - guaranteed minimum only.
-		PointsToAward = MinimumPoints;
+		// Ran out of time, no points awarded:
+		PointsToAward = 0.0f;
 	}
 	else if (TimePercentUsed <= 0.25f)
 	{
@@ -408,7 +415,7 @@ void URaceProgressComponent::AwardPoints(float TimePercentUsed)
 		// Deduct that percentage of time used from the maximum - e.g. 33% of
 		// the time used deducts 33% of MaximumPoints, awarding the remaining
 		// 67%. Never drops below MinimumPoints for an on-time delivery.
-		PointsToAward = FMath::Max(MinimumPoints, MaximumPoints * (1.f - TimePercentUsed));
+		PointsToAward = FMath::Max(MinimumPoints, MaximumPoints * (1.0f - TimePercentUsed));
 	}
 
 	TotalPoints += PointsToAward;
@@ -418,7 +425,25 @@ void URaceProgressComponent::AwardPoints(float TimePercentUsed)
 	{
 		// DEBUG: print the awarded points and total so far, along with the percentage of time used to earn it.
 		const FString Msg = FString::Printf(TEXT("%s: Awarded %.1f points (%.0f%% of time used) - Total: %.1f"),
-			*GetOwner()->GetName(), PointsToAward, TimePercentUsed * 100.f, TotalPoints);
-		GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Emerald, Msg);
+			*GetOwner()->GetName(), PointsToAward, TimePercentUsed * 100.0f, TotalPoints);
+		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Emerald, Msg);
+	}
+}
+
+void URaceProgressComponent::AssignPickupItemValues(ACheckpoint* Checkpoint)
+{
+	if (!Checkpoint)
+	{
+		return;
+	}
+
+	PickupItemHealth = Checkpoint->GetItemHealth();
+	PickupItemWeight = Checkpoint->GetItemWeight();
+
+	if (GEngine && GetOwner())
+	{
+		const FString Msg = FString::Printf(TEXT("%s: Item values updated - Health %.1f, Weight %.1f"),
+			*GetOwner()->GetName(), PickupItemHealth, PickupItemWeight);
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, Msg);
 	}
 }
