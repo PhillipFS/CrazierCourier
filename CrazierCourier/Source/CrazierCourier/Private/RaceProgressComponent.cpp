@@ -85,6 +85,18 @@ void URaceProgressComponent::BeginPlay()
 				IndicatorMesh->SetStaticMesh(IndicatorMeshAsset);
 			}
 		}
+
+		// Bind collision damage to the vehicle's own physics body. Only
+		// UPrimitiveComponents can generate hit events - the vehicle's root
+		// (its Mesh/Box) should already be one, since it's what's physically
+		// simulated.
+		if (UPrimitiveComponent* OwnerPrimitive = Cast<UPrimitiveComponent>(Owner->GetRootComponent()))
+		{
+			// Ensure hit events are enabled, in case the "Simulation
+			// Generates Hit Events" checkbox is off in the editor.
+			OwnerPrimitive->SetNotifyRigidBodyCollision(true);
+			OwnerPrimitive->OnComponentHit.AddDynamic(this, &URaceProgressComponent::OnVehicleHit);
+		}
 	}
 
 	// Issue first random pickup/delivery pair:
@@ -311,17 +323,10 @@ void URaceProgressComponent::AssignRandomPickupDelivery()
 	DeliveryTimeRemaining = TimeToReachCheckpoint;
 	bTimeoutAlreadyHandled = false;
 
-	// Hide whichever checkpoints made up the outgoing pair, then show the new
-	// pair - so at any given moment, only the two checkpoints actually
-	// relevant to this racer's current task are visible.
-	if (PreviousPickup)
-	{
-		PreviousPickup->SetVisualMeshVisible(false);
-	}
-	if (PreviousDelivery)
-	{
-		PreviousDelivery->SetVisualMeshVisible(false);
-	}
+	// NOTE:
+	// checkpoints are set as invisible when passed individually in the HandlePickupDeliveryCheckpoint().
+
+	// Set next pair of checkpoints to visible so the player can see where to go next.
 	PickupCheckpoint->SetVisualMeshVisible(true);
 	DeliveryCheckpoint->SetVisualMeshVisible(true);
 
@@ -356,6 +361,11 @@ void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpo
 		{
 			GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, FString::Printf(TEXT("%s: Pickup collected"), *GetOwner()->GetName()));
 		}
+
+		if (PickupCheckpoint)
+		{
+			PickupCheckpoint->SetVisualMeshVisible(false);
+		}
 	}
 	else if (Checkpoint == DeliveryCheckpoint)
 	{
@@ -381,7 +391,13 @@ void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpo
 				: 1.0f;
 			AwardPoints(TimePercentUsed);
 
-			// Hand out a new random pair of checkpoints for the next delivery cycle.
+			// make mesh invisible, now that delivery is complete and the next random pair will be assigned.
+			if (DeliveryCheckpoint)
+			{
+				DeliveryCheckpoint->SetVisualMeshVisible(false);
+			}
+
+			// Hand out a new pair of checkpoints for the next delivery cycle.
 			AssignRandomPickupDelivery();
 		}
 		else
@@ -445,5 +461,34 @@ void URaceProgressComponent::AssignPickupItemValues(ACheckpoint* Checkpoint)
 		const FString Msg = FString::Printf(TEXT("%s: Item values updated - Health %.1f, Weight %.1f"),
 			*GetOwner()->GetName(), PickupItemHealth, PickupItemWeight);
 		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, Msg);
+	}
+}
+
+void URaceProgressComponent::OnVehicleHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+{
+
+	if (!OtherActor || OtherActor == GetOwner())
+	{
+		return;
+	}
+
+	if (!OtherActor->ActorHasTag(CollideableTag))
+	{
+		return;
+	}
+
+	// Only while actually carrying an item - nothing to damage otherwise.
+	if (!bHasPickedUp)
+	{
+		return;
+	}
+
+	PickupItemHealth = FMath::Max(0.f, PickupItemHealth - CollisionDamageAmount);
+
+	if (GEngine && GetOwner())
+	{
+		const FString Msg = FString::Printf(TEXT("%s: Hit %s - Item Health -%.1f (now %.1f)"),
+			*GetOwner()->GetName(), *OtherActor->GetName(), CollisionDamageAmount, PickupItemHealth);
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, Msg);
 	}
 }

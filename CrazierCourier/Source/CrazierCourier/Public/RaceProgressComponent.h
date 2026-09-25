@@ -120,6 +120,17 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pickup Item")
 	float PickupItemWeight = 0.f;
 
+	// --- Collision damage ---
+	// If the vehicle physically collides with an object tagged with
+	// CollideableTag, the currently carried item's PickupItemHealth is
+	// reduced by CollisionDamageAmount.
+
+	UPROPERTY(EditAnywhere, Category = "Collision Damage")
+	FName CollideableTag = TEXT("Collideable");
+
+	UPROPERTY(EditAnywhere, Category = "Collision Damage")
+	float CollisionDamageAmount = 1.0f;
+
 	// --- Delivery reward system ---
 	// A countdown starts the moment a pair is assigned. Reaching the delivery
 	// checkpoint before it runs out awards points based on how much of the
@@ -166,6 +177,14 @@ private:
 	// PickupItemHealth/PickupItemWeight - called the moment a pickup checkpoint
 	// is actually collected.
 	void AssignPickupItemValues(ACheckpoint* Checkpoint);
+
+	// Bound to the owning vehicle's physical hit events in BeginPlay. Reduces
+	// PickupItemHealth if the vehicle collides with an actor tagged
+	// CollideableTag. UFUNCTION() is required here since this is bound to a
+	// dynamic multicast delegate (OnComponentHit).
+	UFUNCTION()
+	void OnVehicleHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp,
+		FVector NormalImpulse, const FHitResult& Hit);
 
 	// Prevents the timeout case in TickComponent from firing more than once
 	// per pair - reset back to false every time a new pair is assigned.
