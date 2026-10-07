@@ -59,6 +59,9 @@ public:
 	float GetPickupItemHealth() const { return PickupItemHealth; }
 
 	UFUNCTION(BlueprintPure, Category = "Pickup Item")
+	float GetPickupItemCurrentHealth() const { return PickupItemCurrentHealth; }
+
+	UFUNCTION(BlueprintPure, Category = "Pickup Item")
 	float GetPickupItemWeight() const { return PickupItemWeight; }
 
 	UFUNCTION(BlueprintPure, Category = "Delivery")
@@ -118,6 +121,9 @@ protected:
 	float PickupItemHealth = 0.f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pickup Item")
+	float PickupItemCurrentHealth = 0.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pickup Item")
 	float PickupItemWeight = 0.f;
 
 	// --- Collision damage ---
@@ -130,6 +136,24 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Collision Damage")
 	float CollisionDamageAmount = 1.0f;
+
+	// Impulse magnitude (from OnComponentHit's NormalImpulse) below which an
+	// impact is considered too soft to count as a real crash - no damage at all.
+	UPROPERTY(EditAnywhere, Category = "Collision Damage")
+	float MinImpulseForDamage = 500.f;
+
+	// Impulse magnitude at or above which a hit deals the full
+	// CollisionDamageAmount. Impacts between the min and max scale linearly
+	// between 0 and full damage.
+	UPROPERTY(EditAnywhere, Category = "Collision Damage")
+	float MaxImpulseForFullDamage = 3000.f;
+
+	// Minimum time (seconds) between damage-applying hits. Without this,
+	// sustained contact (grinding along a wall, resting against an obstacle)
+	// would deal damage on every single physics tick instead of once per impact.
+	// NOTE: Look for alternative to count damage only once per impact.
+	UPROPERTY(EditAnywhere, Category = "Collision Damage")
+	float HitDamageCooldown = 0.5f;
 
 	// --- Delivery reward system ---
 	// A countdown starts the moment a pair is assigned. Reaching the delivery
@@ -185,6 +209,12 @@ private:
 	UFUNCTION()
 	void OnVehicleHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp,
 		FVector NormalImpulse, const FHitResult& Hit);
+
+	// World time (seconds) the last damage-applying hit occurred - used
+	// together with HitDamageCooldown to prevent sustained contact from
+	// dealing damage on every physics tick. Starts far in the past so the
+	// very first real impact is never blocked by the cooldown.
+	float LastDamageTime = -1000.f;
 
 	// Prevents the timeout case in TickComponent from firing more than once
 	// per pair - reset back to false every time a new pair is assigned.

@@ -247,17 +247,6 @@ void URaceProgressComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		}
 	}
 
-	// DEBUG: persistent readout of what the indicator is currently pointing at,
-	// refreshed every frame on the same line (Key = this component's unique ID,
-	// so multiple racers each get their own line instead of overwriting each other).
-	if (GEngine && GetOwner())
-	{
-		const int32 DebugKey = static_cast<int32>(GetUniqueID());
-		const FString Msg = FString::Printf(TEXT("%s: Indicator -> %s"),
-			*GetOwner()->GetName(), *Target->GetName());
-		GEngine->AddOnScreenDebugMessage(DebugKey, 0.0f, FColor::White, Msg);
-	}
-
 	const FVector MeshLocation = IndicatorMesh->GetComponentLocation();
 	const FVector TargetLocation = Target->GetActorLocation();
 	const FRotator LookAtRotation = UKismetMathLibrary::FindLookAtRotation(MeshLocation, TargetLocation);
@@ -374,11 +363,6 @@ void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpo
 			bHasPickedUp = false;
 			OnDeliveryCompleted.Broadcast();
 
-			// Assign delivery checkpoint values to the player when
-			// reached. (Used by default to reset item health and weight
-			// variables to 0, but can be used to set different values.)
-			AssignPickupItemValues(Checkpoint);
-
 			if (GEngine && GetOwner())
 			{
 				// DEBUG:
@@ -390,6 +374,11 @@ void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpo
 				? FMath::Clamp((TimeToReachCheckpoint - DeliveryTimeRemaining) / TimeToReachCheckpoint, 0.0f, 1.0f)
 				: 1.0f;
 			AwardPoints(TimePercentUsed);
+
+			// Assign delivery checkpoint values to the player when
+			// reached. (Used by default to reset item health and weight
+			// variables to 0, but can be used to set different values.)
+			AssignPickupItemValues(Checkpoint);
 
 			// make mesh invisible, now that delivery is complete and the next random pair will be assigned.
 			if (DeliveryCheckpoint)
@@ -406,7 +395,7 @@ void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpo
 			if (GEngine && GetOwner())
 			{
 				// DEBUG:
-				GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("%s: Delivery ignored - no pickup yet"), *GetOwner()->GetName()));
+				// GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("%s: Delivery ignored - no pickup yet"), *GetOwner()->GetName()));
 			}
 		}
 	}
@@ -414,7 +403,18 @@ void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpo
 
 void URaceProgressComponent::AwardPoints(float TimePercentUsed)
 {
+	// (DEBUGS PRINT IN EMERALD:)
+	
+	// + + T I M E  M O D I F I E R S
 	float PointsToAward = 0.0f;
+	
+	// DEBUG: Show awarded points before time modifier is applied.
+	if (GEngine && GetOwner())
+	{
+		const FString Msg = FString::Printf(TEXT("MAX points to award: %.1f"),
+			MaximumPoints);
+		GEngine->AddOnScreenDebugMessage(-1, 25.0f, FColor::Emerald, Msg);
+	}
 
 	if (TimePercentUsed >= 1.0f)
 	{
@@ -433,6 +433,58 @@ void URaceProgressComponent::AwardPoints(float TimePercentUsed)
 		// 67%. Never drops below MinimumPoints for an on-time delivery.
 		PointsToAward = FMath::Max(MinimumPoints, MaximumPoints * (1.0f - TimePercentUsed));
 	}
+	// *
+
+
+	// + + H E A L T H  M O D I F I E R S
+	// get percentage of remaining health relative to full heatlh value of that item:
+	float PercentPickupHealth = 0.0f;
+
+	// Guard for 0 value:
+	if (PickupItemCurrentHealth > 0.0f)
+	{
+		PercentPickupHealth = PickupItemCurrentHealth / PickupItemHealth;
+		if (GEngine && GetOwner())
+		{
+			const FString Msg = FString::Printf(TEXT("Health percent at DELIVERY: %.1f"),
+				PercentPickupHealth);
+			GEngine->AddOnScreenDebugMessage(-1, 25.0f, FColor::Emerald, Msg);
+		}
+	}
+
+	// DEBUG: Show awarded points after time modifier, before health modifier is applied.
+	if (GEngine && GetOwner())
+	{
+		const FString Msg = FString::Printf(TEXT("Award post TIME modifier: %.1f"),
+			PointsToAward);
+		GEngine->AddOnScreenDebugMessage(-1, 25.0f, FColor::Emerald, Msg);
+	}
+
+	if (PercentPickupHealth < 0.75f) {
+		// Simply scale the points awarded by the percentage of health remaining if it's below 75%. 
+		// For example, if the player delivers the item with 50% health, they will receive only 50% 
+		// of the points they would have earned otherwise.
+		PointsToAward =  PointsToAward * PercentPickupHealth;
+	}
+
+	else {
+		// Modify score with a bonus for delivering the pickup item with more than 75% health remaining. 
+		// For example, if the player delivers the item with 90% health, they will receive a 15% bonus to their score.
+		// (1.0 + (0.9 - 0.75) = 1.15).
+		PointsToAward = PointsToAward * (1.0f + (PercentPickupHealth - 0.75f));
+	}
+
+	// DEBUG: Show awarded points after health modifier is applied.
+	if (GEngine && GetOwner())
+	{
+		const FString Msg = FString::Printf(TEXT("Award post HEALTH modifier: %.1f"),
+			PointsToAward);
+		GEngine->AddOnScreenDebugMessage(-1, 25.0f, FColor::Emerald, Msg);
+	}
+	// *
+
+
+	// + + T O T A L  P O I N T S  A W A R D E D
 
 	TotalPoints += PointsToAward;
 	OnPointsAwarded.Broadcast(PointsToAward, TotalPoints);
@@ -440,10 +492,11 @@ void URaceProgressComponent::AwardPoints(float TimePercentUsed)
 	if (GEngine && GetOwner())
 	{
 		// DEBUG: print the awarded points and total so far, along with the percentage of time used to earn it.
-		const FString Msg = FString::Printf(TEXT("%s: Awarded %.1f points (%.0f%% of time used) - Total: %.1f"),
-			*GetOwner()->GetName(), PointsToAward, TimePercentUsed * 100.0f, TotalPoints);
-		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Emerald, Msg);
+		const FString Msg = FString::Printf(TEXT("%s: (%.0f%% of time used) - TOTAL POINTS: %.1f"),
+			*GetOwner()->GetName(), TimePercentUsed * 100.0f, TotalPoints);
+		GEngine->AddOnScreenDebugMessage(-1, 25.0f, FColor::Emerald, Msg);
 	}
+	// *
 }
 
 void URaceProgressComponent::AssignPickupItemValues(ACheckpoint* Checkpoint)
@@ -453,13 +506,15 @@ void URaceProgressComponent::AssignPickupItemValues(ACheckpoint* Checkpoint)
 		return;
 	}
 
+	// Assign the pickup item values from the CHECKPOINT to THIS RACEPROGRESS component variables.
 	PickupItemHealth = Checkpoint->GetItemHealth();
+	PickupItemCurrentHealth = Checkpoint->GetItemHealth();
 	PickupItemWeight = Checkpoint->GetItemWeight();
 
 	if (GEngine && GetOwner())
 	{
-		const FString Msg = FString::Printf(TEXT("%s: Item values updated - Health %.1f, Weight %.1f"),
-			*GetOwner()->GetName(), PickupItemHealth, PickupItemWeight);
+		const FString Msg = FString::Printf(TEXT("%s: Item values updated - CurrentHealth %.1f, Weight %.1f"),
+			*GetOwner()->GetName(), PickupItemCurrentHealth, PickupItemWeight);
 		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, Msg);
 	}
 }
@@ -477,18 +532,47 @@ void URaceProgressComponent::OnVehicleHit(UPrimitiveComponent* HitComponent, AAc
 		return;
 	}
 
+	// D A M A G I N G		I T E M S	O N		C O L L I S I O N 
+	//
 	// Only while actually carrying an item - nothing to damage otherwise.
 	if (!bHasPickedUp)
 	{
 		return;
 	}
 
-	PickupItemHealth = FMath::Max(0.f, PickupItemHealth - CollisionDamageAmount);
+	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f; // (variable for marking the time of the last damage event)
+
+	// ignore hits that happen too soon after the last damage-applying hit:
+	if (Now - LastDamageTime < HitDamageCooldown)
+	{
+		return;
+	}
+
+	// NormalImpulse is the actual physical impulse the collision resolved with:
+	const float ImpactStrength = NormalImpulse.Size();
+
+	// Too soft to count as a real impact, doesn't damage an item:
+	if (ImpactStrength < MinImpulseForDamage)
+	{
+		return;
+	}
+
+	// Otherwise, mark now as last damage event:
+	LastDamageTime = Now;
+
+	// Scale damage linearly between 0 (minimum threshold) and
+	// full CollisionDamageAmount ( = or > MaxImpulseForFullDamage).
+	const float ImpulseRange = FMath::Max(1.f, MaxImpulseForFullDamage - MinImpulseForDamage);
+	const float DamageAlpha = FMath::Clamp((ImpactStrength - MinImpulseForDamage) / ImpulseRange, 0.f, 1.f);
+	const float DamageToApply = CollisionDamageAmount * DamageAlpha;
+
+	// Apply damage with modifiers from math above:
+	PickupItemCurrentHealth = FMath::Max(0.f, PickupItemCurrentHealth - DamageToApply);
 
 	if (GEngine && GetOwner())
 	{
-		const FString Msg = FString::Printf(TEXT("%s: Hit %s - Item Health -%.1f (now %.1f)"),
-			*GetOwner()->GetName(), *OtherActor->GetName(), CollisionDamageAmount, PickupItemHealth);
+		const FString Msg = FString::Printf(TEXT("%s: Hit %s - Damage Taken: -%.1f (Health now %.1f)"),
+			*GetOwner()->GetName(), *OtherActor->GetName(), DamageToApply, PickupItemCurrentHealth);
 		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, Msg);
 	}
 }
