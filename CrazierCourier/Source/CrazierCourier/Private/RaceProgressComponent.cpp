@@ -212,19 +212,6 @@ void URaceProgressComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 	ACheckpoint* Target = GetCurrentTargetCheckpoint();
 
-	// TEMP DEBUG: if no real pickup/delivery target is assigned yet, fall back
-	// to whatever checkpoint happens to be first in RaceManager's list, just to
-	// test the indicator's rotation logic on its own. Remove this block once
-	// AssignRandomPickupDelivery is confirmed working correctly.
-	if (!Target && RaceManagerRef)
-	{
-		const TArray<ACheckpoint*>& AllCheckpoints = RaceManagerRef->GetCheckpoints();
-		if (AllCheckpoints.Num() > 0)
-		{
-			Target = AllCheckpoints[0];
-		}
-	}
-
 	if (!Target)
 	{
 		// No pickup/delivery pair assigned yet, hide the indicator rather than point at nothing.
@@ -272,6 +259,10 @@ void URaceProgressComponent::AssignRandomPickupDelivery()
 	ACheckpoint* PreviousPickup = PickupCheckpoint;
 	ACheckpoint* PreviousDelivery = DeliveryCheckpoint;
 
+	// Set previous pair of checkpoints to invisible so the player.
+	if (PreviousPickup)		{ PreviousPickup->SetVisualMeshVisible(false); }
+	if (PreviousDelivery)	{ PreviousDelivery->SetVisualMeshVisible(false); }
+
 	ACheckpoint* NewPickup = nullptr;
 	int32 PickupSafetyCounter = 0;
 	do
@@ -315,9 +306,8 @@ void URaceProgressComponent::AssignRandomPickupDelivery()
 	// NOTE:
 	// checkpoints are set as invisible when passed individually in the HandlePickupDeliveryCheckpoint().
 
-	// Set next pair of checkpoints to visible so the player can see where to go next.
+	// Set next pickup checkpoint to visible so the player can see where to go next.
 	PickupCheckpoint->SetVisualMeshVisible(true);
-	DeliveryCheckpoint->SetVisualMeshVisible(true);
 
 	if (GEngine && GetOwner())
 	{
@@ -353,7 +343,9 @@ void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpo
 
 		if (PickupCheckpoint)
 		{
-			PickupCheckpoint->SetVisualMeshVisible(false);
+			PickupCheckpoint->SetVisualMeshVisible(false); // Hide the pickup checkpoint now that it's been collected.
+
+			if (DeliveryCheckpoint)	DeliveryCheckpoint->SetVisualMeshVisible(true); // Reveal the delivery checkpoint now that the pickup has been collected.
 		}
 	}
 	else if (Checkpoint == DeliveryCheckpoint)
@@ -532,8 +524,8 @@ void URaceProgressComponent::OnVehicleHit(UPrimitiveComponent* HitComponent, AAc
 		return;
 	}
 
-	// D A M A G I N G		I T E M S	O N		C O L L I S I O N 
-	//
+	// ++ D A M A G I N G  I T E M S  O N  C O L L I S I O N 
+	
 	// Only while actually carrying an item - nothing to damage otherwise.
 	if (!bHasPickedUp)
 	{
@@ -574,5 +566,13 @@ void URaceProgressComponent::OnVehicleHit(UPrimitiveComponent* HitComponent, AAc
 		const FString Msg = FString::Printf(TEXT("%s: Hit %s - Damage Taken: -%.1f (Health now %.1f)"),
 			*GetOwner()->GetName(), *OtherActor->GetName(), DamageToApply, PickupItemCurrentHealth);
 		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Orange, Msg);
+	}
+
+	if (GetPickupItemCurrentHealth() <= 0.0f)
+	{
+		// Handle item destruction or other logic here:
+		
+		//AwardPoints(0.0f); // No points for destroyed item.
+
 	}
 }

@@ -135,25 +135,25 @@ protected:
 	FName CollideableTag = TEXT("Collideable");
 
 	UPROPERTY(EditAnywhere, Category = "Collision Damage")
-	float CollisionDamageAmount = 1.0f;
+	float CollisionDamageAmount = 5.0f;
 
 	// Impulse magnitude (from OnComponentHit's NormalImpulse) below which an
 	// impact is considered too soft to count as a real crash - no damage at all.
 	UPROPERTY(EditAnywhere, Category = "Collision Damage")
-	float MinImpulseForDamage = 500.f;
+	float MinImpulseForDamage = 75000.0f;
 
 	// Impulse magnitude at or above which a hit deals the full
 	// CollisionDamageAmount. Impacts between the min and max scale linearly
 	// between 0 and full damage.
 	UPROPERTY(EditAnywhere, Category = "Collision Damage")
-	float MaxImpulseForFullDamage = 3000.f;
+	float MaxImpulseForFullDamage = 500000.0f;
 
 	// Minimum time (seconds) between damage-applying hits. Without this,
 	// sustained contact (grinding along a wall, resting against an obstacle)
 	// would deal damage on every single physics tick instead of once per impact.
 	// NOTE: Look for alternative to count damage only once per impact.
 	UPROPERTY(EditAnywhere, Category = "Collision Damage")
-	float HitDamageCooldown = 0.5f;
+	float HitDamageCooldown = 2.0f;
 
 	// --- Delivery reward system ---
 	// A countdown starts the moment a pair is assigned. Reaching the delivery
