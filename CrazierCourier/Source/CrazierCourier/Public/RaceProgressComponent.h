@@ -17,6 +17,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLapCompleted, int32, LapNumber, 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRaceFinishedForRacer);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPickupCollected);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDeliveryCompleted);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnLevelTimeOut);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPointsAwarded, float, PointsAwarded, float, NewTotalPoints);
 
 UCLASS(ClassGroup = (Racing), meta = (BlueprintSpawnableComponent))
@@ -40,7 +41,7 @@ public:
 	int32 GetLapCount() const { return LapCount; }
 
 	UFUNCTION(BlueprintPure, Category = "Race")
-	bool IsRaceFinished() const { return bRaceFinished; }
+	bool GetIsRaceFinished() const { return IsRaceFinished; }
 
 	UFUNCTION(BlueprintPure, Category = "Race")
 	const TArray<float>& GetLapTimes() const { return LapTimes; }
@@ -55,15 +56,6 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Delivery")
 	FOnPointsAwarded OnPointsAwarded;
 
-	UFUNCTION(BlueprintPure, Category = "Pickup Item")
-	float GetPickupItemHealth() const { return PickupItemHealth; }
-
-	UFUNCTION(BlueprintPure, Category = "Pickup Item")
-	float GetPickupItemCurrentHealth() const { return PickupItemCurrentHealth; }
-
-	UFUNCTION(BlueprintPure, Category = "Pickup Item")
-	float GetPickupItemWeight() const { return PickupItemWeight; }
-
 	UFUNCTION(BlueprintPure, Category = "Delivery")
 	float GetTotalPoints() const { return TotalPoints; }
 
@@ -73,8 +65,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Delivery")
 	void AssignRandomPickupDelivery();
 
+	UFUNCTION(BlueprintCallable, Category = "Delivery")
+	void AcceptDeliveryJob(ACheckpoint* Pickup, ACheckpoint* Delivery);
+
+	UFUNCTION(BlueprintCallable, Category = "Delivery")
+	void RejectDeliveryJob();
+
 	UFUNCTION(BlueprintPure, Category = "Delivery")
 	ACheckpoint* GetCurrentTargetCheckpoint() const;
+
+	UFUNCTION(BlueprintPure, Category = "Pickup Item")
+	float GetPickupItemHealth() const { return PickupItemHealth; }
+
+	UFUNCTION(BlueprintPure, Category = "Pickup Item")
+	float GetPickupItemCurrentHealth() const { return PickupItemCurrentHealth; }
+
+	UFUNCTION(BlueprintPure, Category = "Pickup Item")
+	float GetPickupItemWeight() const { return PickupItemWeight; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -96,7 +103,7 @@ protected:
 	TArray<float> LapTimes;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Race")
-	bool bRaceFinished = false;
+	bool IsRaceFinished = false;
 
 	// The race manager's elapsed time at the moment this racer's last lap completed,
 	// used to caculate how long each individual lap took.
@@ -113,7 +120,16 @@ protected:
 	TObjectPtr<ACheckpoint> DeliveryCheckpoint;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Delivery")
-	bool bHasPickedUp = false;
+	bool IsPickedUp = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Delivery")
+	bool IsOrderAvailable = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Delivery")
+	bool IsJobInProgress = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Delivery")
+	bool IsPhoneMenuOn = false;
 
 	// --- Currently carried pickup item ---
 	// Copied over from whichever Checkpoint was just collected.
@@ -180,6 +196,29 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Delivery")
 	float TotalPoints = 0.f;
 
+	// --- Level settings (time limit, orders) ---
+	// How long (seconds) the level lasts before it ends.
+	UPROPERTY(EditAnywhere, Category = "Level settings")
+	float LevelTimeLimit = 300.0f;
+
+	// Total number of orders offered to the player over the course of the level.
+	UPROPERTY(EditAnywhere, Category = "Level settings")
+	int32 MaxOrdersPerLevel = 5;
+
+	// Orders the player has accepted so far this level.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Level settings")
+	int32 OrdersTaken = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Level settings")
+	float LevelTimeRemaining = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Level settings")
+	bool IsLevelFinished = false;
+
+	UPROPERTY(BlueprintAssignable, Category = "Level settings")
+	FOnLevelTimeOut OnLevelTimeOut;
+
+	// --- Indicator mesh ---
 	UPROPERTY(VisibleAnywhere, Category = "Delivery")
 	TObjectPtr<UStaticMeshComponent> IndicatorMesh;
 
@@ -188,6 +227,7 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Delivery")
 	TObjectPtr<UStaticMesh> IndicatorMeshAsset;
+
 private:
 	// Handle checkpoint rules:
 	void HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpoint);
@@ -224,4 +264,20 @@ private:
 	// can print a one-time message only when the target actually changes,
 	// rather than spamming every frame.
 	ACheckpoint* LastIndicatorTarget = nullptr;
+
+	// --- LEVEL SETTINGS: For order generation and timing ---
+	// Builds the randomized list of offer times. Called once in BeginPlay.
+	void BuildOrderList();
+
+	// Counts down the level timer and issues each order when it comes due.
+	void UpdateOrderList(float DeltaTime);
+
+	// Moments (seconds into the level) at which each order gets offered.
+	TArray<float> OrderOfferTimes;
+
+	// Index of the next order that hasn't been offered yet.
+	int32 NextOrderIndex = 0;
+
+	// False until BuildOrderList() has run, so the timer can't "expire" at start-up.
+	bool IsOrderListReady = false;
 };

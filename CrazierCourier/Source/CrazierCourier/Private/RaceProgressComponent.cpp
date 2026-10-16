@@ -100,7 +100,8 @@ void URaceProgressComponent::BeginPlay()
 	}
 
 	// Issue first random pickup/delivery pair:
-	AssignRandomPickupDelivery();
+	//AssignRandomPickupDelivery();
+	BuildOrderList();
 }
 
 void URaceProgressComponent::NotifyCheckpointPassed(ACheckpoint* Checkpoint)
@@ -184,6 +185,8 @@ void URaceProgressComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	UpdateOrderList(DeltaTime);
+
 	if (!IndicatorMesh)
 	{
 		return;
@@ -205,8 +208,12 @@ void URaceProgressComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		if (DeliveryTimeRemaining <= 0.0f)
 		{
 			bTimeoutAlreadyHandled = true;
+			IsJobInProgress = false;
 			AwardPoints(1.0f); // 1.0f is 100% of the time used.
-			AssignRandomPickupDelivery();
+			//AssignRandomPickupDelivery();
+			PickupCheckpoint->SetVisualMeshVisible(false);
+			DeliveryCheckpoint->SetVisualMeshVisible(false);
+			IsPickedUp = false;
 		}
 	}
 
@@ -247,6 +254,10 @@ void URaceProgressComponent::AssignRandomPickupDelivery()
 		return;
 	}
 
+	// signal that a new order is available for the player to accept.
+	IsOrderAvailable = true;
+
+	// get pools of pickup and delivery checkpoints from the race manager.
 	const TArray<ACheckpoint*>& PickupPool = RaceManagerRef->GetPickupCheckpoints();
 	const TArray<ACheckpoint*>& DeliveryPool = RaceManagerRef->GetDeliveryCheckpoints();
 
@@ -256,10 +267,11 @@ void URaceProgressComponent::AssignRandomPickupDelivery()
 		return;
 	}
 
+	// store previous pair of checkpoints:
 	ACheckpoint* PreviousPickup = PickupCheckpoint;
 	ACheckpoint* PreviousDelivery = DeliveryCheckpoint;
 
-	// Set previous pair of checkpoints to invisible so the player.
+	// Set previous pair of checkpoints to invisible to the player.
 	if (PreviousPickup)		{ PreviousPickup->SetVisualMeshVisible(false); }
 	if (PreviousDelivery)	{ PreviousDelivery->SetVisualMeshVisible(false); }
 
@@ -297,7 +309,14 @@ void URaceProgressComponent::AssignRandomPickupDelivery()
 	}
 
 	DeliveryCheckpoint = NewDelivery;
-	bHasPickedUp = false;
+	IsPickedUp = false;
+}
+
+void URaceProgressComponent::AcceptDeliveryJob(ACheckpoint* Pickup, ACheckpoint* Delivery)
+{
+	// Set OrderAvailable to false, signaling that the player has accepted the job and is now in progress.
+	IsOrderAvailable = false;
+	IsJobInProgress = true;
 
 	// Start the delivery timer fresh for this new pair.
 	DeliveryTimeRemaining = TimeToReachCheckpoint;
@@ -317,21 +336,28 @@ void URaceProgressComponent::AssignRandomPickupDelivery()
 	}
 }
 
+void URaceProgressComponent::RejectDeliveryJob()
+{
+	// Set OrderAvailable to false, signaling that the player has 
+	// rejected the job and is still free to accept a new order.
+	IsOrderAvailable = false;
+}
+
 ACheckpoint* URaceProgressComponent::GetCurrentTargetCheckpoint() const
 {
-	return bHasPickedUp ? DeliveryCheckpoint : PickupCheckpoint;
+	return IsPickedUp ? DeliveryCheckpoint : PickupCheckpoint;
 }
 
 void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpoint)
 {
-	if (!Checkpoint)
+	if (!Checkpoint || !IsJobInProgress)
 	{
 		return;
 	}
 
-	if (Checkpoint == PickupCheckpoint && !bHasPickedUp)
+	if (Checkpoint == PickupCheckpoint && !IsPickedUp)
 	{
-		bHasPickedUp = true;
+		IsPickedUp = true;
 		OnPickupCollected.Broadcast();
 		// assign item values to player raceprogresscomponent:
 		AssignPickupItemValues(Checkpoint);
@@ -350,9 +376,9 @@ void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpo
 	}
 	else if (Checkpoint == DeliveryCheckpoint)
 	{
-		if (bHasPickedUp)
+		if (IsPickedUp)
 		{
-			bHasPickedUp = false;
+			IsPickedUp = false;
 			OnDeliveryCompleted.Broadcast();
 
 			if (GEngine && GetOwner())
@@ -372,14 +398,18 @@ void URaceProgressComponent::HandlePickupDeliveryCheckpoint(ACheckpoint* Checkpo
 			// variables to 0, but can be used to set different values.)
 			AssignPickupItemValues(Checkpoint);
 
+			// Stop delivery timer countdown until the next pickup is collected.
+			bTimeoutAlreadyHandled = true;
+			IsJobInProgress = false;
+
 			// make mesh invisible, now that delivery is complete and the next random pair will be assigned.
 			if (DeliveryCheckpoint)
 			{
 				DeliveryCheckpoint->SetVisualMeshVisible(false);
 			}
 
-			// Hand out a new pair of checkpoints for the next delivery cycle.
-			AssignRandomPickupDelivery();
+			// UNUSED: Hand out a new pair of checkpoints for the next delivery cycle.
+			//AssignRandomPickupDelivery();
 		}
 		else
 		{
@@ -527,7 +557,7 @@ void URaceProgressComponent::OnVehicleHit(UPrimitiveComponent* HitComponent, AAc
 	// ++ D A M A G I N G  I T E M S  O N  C O L L I S I O N 
 	
 	// Only while actually carrying an item - nothing to damage otherwise.
-	if (!bHasPickedUp)
+	if (!IsPickedUp)
 	{
 		return;
 	}
@@ -573,6 +603,76 @@ void URaceProgressComponent::OnVehicleHit(UPrimitiveComponent* HitComponent, AAc
 		// Handle item destruction or other logic here:
 		
 		//AwardPoints(0.0f); // No points for destroyed item.
+	}
+}
 
+void URaceProgressComponent::BuildOrderList()
+{
+	OrderOfferTimes.Reset();
+	NextOrderIndex = 0;
+	OrdersTaken = 0;
+	IsLevelFinished = false;
+	LevelTimeRemaining = LevelTimeLimit;
+	IsOrderListReady = (LevelTimeLimit > 0.0f);
+
+	if (MaxOrdersPerLevel <= 0 || LevelTimeLimit <= 0.0f)
+	{
+		return;
+	}
+
+	// One equal slot per order, with a random moment picked inside each slot.
+	const float SlotLength = LevelTimeLimit / MaxOrdersPerLevel;
+	for (int32 i = 0; i < MaxOrdersPerLevel; ++i)
+	{
+		OrderOfferTimes.Add(SlotLength * (i + FMath::FRand()));
+	}
+
+}
+
+void URaceProgressComponent::UpdateOrderList(float DeltaTime)
+{
+	if (!IsOrderListReady)
+	{
+		return;
+	}
+
+	// get time remaining in the level and subtract the time since last tick.
+	LevelTimeRemaining = FMath::Max(0.0f, LevelTimeRemaining - DeltaTime);
+
+	// if level time limit is reached (time left is 0):
+	if (LevelTimeRemaining <= 0.0f)
+	{
+		// signal time is out and the level is finished, so no more orders can be taken.
+		IsOrderListReady = false;
+		IsLevelFinished = true;
+		OnLevelTimeOut.Broadcast();
+
+		// Print DEBUG message to screen when the level time runs out, showing how many orders were taken:
+		if (GEngine && GetOwner())
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 6.0f, FColor::Red,
+				FString::Printf(TEXT("%s: Level time is up! Orders taken: %d"), *GetOwner()->GetName(), OrdersTaken));
+		}
+		return;
+	}
+
+	// DEBUG:
+	if (GEngine && GetOwner())
+	{
+		const int32 LevelDebugKey = static_cast<int32>(GetUniqueID()) + 2;
+		const FString Msg = FString::Printf(TEXT("%s: Level time left -> %.1fs | Offered %d/%d | Taken %d"),
+			*GetOwner()->GetName(), LevelTimeRemaining, NextOrderIndex, MaxOrdersPerLevel, OrdersTaken);
+		GEngine->AddOnScreenDebugMessage(LevelDebugKey, 0.0f, FColor::Silver, Msg);
+	}
+
+	// Offer the next scheduled order once its time has arrived, but only when the player is free.
+	const float LevelTimeElapsed = LevelTimeLimit - LevelTimeRemaining;
+	if (OrderOfferTimes.IsValidIndex(NextOrderIndex)
+		&& LevelTimeElapsed >= OrderOfferTimes[NextOrderIndex]
+		&& !IsOrderAvailable
+		&& !IsJobInProgress)
+	{
+		NextOrderIndex++;
+		AssignRandomPickupDelivery();
 	}
 }
